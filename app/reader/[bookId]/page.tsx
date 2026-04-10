@@ -1,539 +1,407 @@
-// 'use client'
+'use client'
 
-// import { useEffect, useState, useRef, useCallback } from 'react'
-// import { useParams } from 'next/navigation'
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-// import {
-//   getOrCreateSessionId,
-//   fetchPageContent,
-//   fetchPageBatch,
-//   fetchBookMetadata,
-//   summarizePage,
-//   getFollowUpQuestions,
-//   askQuestion,
-//   saveReadingProgress,
-//   type PageContent,
-//   type BookMetadata,
-//   type AIResponse,
-//   type SuggestedQuestion,
-// } from '@/services/api'
+import { useParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { fetchPageContent, sendChatMessage, getChatStatus, getChatHistory } from '@/services/api'
+import type { PageResponse } from '@/types/type'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
-// interface CacheEntry {
-//   data: PageContent
-//   timestamp: number
-// }
+export default function ReaderPage() {
 
-// export default function ReaderPage() {
-//   const params = useParams()
-//   const bookId = params.bookId as string
+  const params = useParams()
+  const bookId = Number(params.bookId)
 
-//   const [sessionId, setSessionId] = useState<string>('')
-//   const [bookMeta, setBookMeta] = useState<BookMetadata | null>(null)
-//   const [currentPage, setCurrentPage] = useState(4) // Start at page 4 as example
-//   const [loading, setLoading] = useState(false)
-//   const [error, setError] = useState<string | null>(null)
-//   const [activeTab, setActiveTab] = useState('summary')
-//   const [aiResponses, setAiResponses] = useState<Record<string, AIResponse[]>>({
-//     summary: [],
-//     'follow-up': [],
-//     ask: [],
-//   })
-//   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([])
-//   const [aiLoading, setAiLoading] = useState(false)
+  const [input, setInput] = useState("")
+  const [activeTab, setActiveTab] = useState<"summary" | "question" | "highlight">("summary")
 
-//   // LRU Cache: { pageNumber: { data, timestamp } }
-//   const cacheRef = useRef<Record<number, CacheEntry>>({})
-//   const [displayPage, setDisplayPage] = useState<PageContent | null>(null)
+  const [loading, setLoading] = useState({
+    summary: false,
+    highlight: false,
+    question: false
+  })
 
-//   // Cache config
-//   const CACHE_TTL_MS = 5 * 60 * 1000 // 5 min
-//   const PRELOAD_RANGE = 2 // Preload ±2 pages around current
+  const [messages, setMessages] = useState<any>({
+    summary: [],
+    highlight: [],
+    question: []
+  })
 
-//   // Get or create session ID
-//   useEffect(() => {
-//     const cookies = document.cookie.split(';').reduce((acc, cookie) => {
-//       const [key, value] = cookie.trim().split('=')
-//       acc[key] = decodeURIComponent(value || '')
-//       return acc
-//     }, {} as Record<string, string>)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageData, setPageData] = useState<PageResponse | null>(null)
 
-//     let sid = cookies['session_id']
-//     if (!sid) {
-//       sid = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-//       document.cookie = `session_id=${encodeURIComponent(sid)}; path=/; max-age=${30 * 24 * 60 * 60}`
-//     }
-//     setSessionId(sid)
-//   }, [])
+  // 📄 FETCH PAGE
+  useEffect(() => {
+    if (!bookId) return
 
-//   // Fetch book metadata on mount
-//   useEffect(() => {
-//     if (!sessionId || !bookId) return
-//     const loadMeta = async () => {
-//       try {
-//         const meta = await fetchBookMetadata(bookId, sessionId)
-//         setBookMeta(meta)
-//       } catch (err) {
-//         console.error('Failed to load book metadata:', err)
-//       }
-//     }
-//     loadMeta()
-//   }, [bookId, sessionId])
+    const load = async () => {
+      try {
+        const data = await fetchPageContent(bookId, currentPage)
+        setPageData(data)
+      } catch (err) {
+        console.error(err)
+      }
+    }
 
-//   // Get page from cache or fetch
-//   const getPageContent = useCallback(
-//     async (pageNumber: number): Promise<PageContent | null> => {
-//       if (pageNumber < 1 || (bookMeta && pageNumber > bookMeta.totalPages)) return null
+    load()
+  }, [bookId, currentPage])
 
-//       // Check cache (valid if < CACHE_TTL_MS old)
-//       const cached = cacheRef.current[pageNumber]
-//       if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-//         console.log(`Cache hit: page ${pageNumber}`)
-//         return cached.data
-//       }
+  // 🔄 AUTO REFRESH
+  useEffect(() => {
+    if (pageData?.status === 'processing') {
+      const interval = setInterval(async () => {
+        const data = await fetchPageContent(bookId, currentPage)
+        setPageData(data)
+      }, 2000)
 
-//       // Fetch from backend
-//       try {
-//         const data = await fetchPageContent(bookId, pageNumber, sessionId)
-//         cacheRef.current[pageNumber] = { data, timestamp: Date.now() }
-//         return data
-//       } catch (err) {
-//         console.error(`Error fetching page ${pageNumber}:`, err)
-//         return null
-//       }
-//     },
-//     [bookId, sessionId, bookMeta]
-//   )
+      return () => clearInterval(interval)
+    }
+  }, [pageData, currentPage, bookId])
 
-//   // Preload pages in background
-//   const preloadPages = useCallback(
-//     async (centerPage: number) => {
-//       const pagesToPreload: number[] = []
-//       for (let i = centerPage - PRELOAD_RANGE; i <= centerPage + PRELOAD_RANGE; i++) {
-//         if (i >= 1 && (!bookMeta || i <= bookMeta.totalPages) && !cacheRef.current[i]) {
-//           pagesToPreload.push(i)
-//         }
-//       }
+  // 🔥 RESET ON PAGE CHANGE
+  useEffect(() => {
+    setMessages({
+      summary: [],
+      highlight: [],
+      question: []
+    })
+    setActiveTab("summary")
+  }, [currentPage])
 
-//       // Preload concurrently (but limit to 3 at a time to avoid overwhelming backend)
-//       for (let i = 0; i < pagesToPreload.length; i += 3) {
-//         const batch = pagesToPreload.slice(i, i + 3)
-//         await Promise.all(batch.map(p => getPageContent(p)))
-//       }
-//     },
-//     [bookMeta, getPageContent]
-//   )
+  // 📜 LOAD CHAT HISTORY
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!bookId) return
 
-//   // Load current page + preload adjacent pages
-//   useEffect(() => {
-//     if (!sessionId || !bookId) return
+      try {
+        const data = await getChatHistory(bookId, currentPage, activeTab)
+        
+        if (data.messages && data.messages.length > 0) {
+          setMessages((prev: any) => ({
+            ...prev,
+            [activeTab]: data.messages
+          }))
+        }
+      } catch (err) {
+        console.error("Failed to load chat history:", err)
+      }
+    }
 
-//     const loadCurrentPage = async () => {
-//       setLoading(true)
-//       setError(null)
-//       try {
-//         const page = await getPageContent(currentPage)
-//         if (page) {
-//           setDisplayPage(page)
-//           // Preload surrounding pages in background
-//           preloadPages(currentPage)
-//         } else {
-//           setError(`Failed to load page ${currentPage}`)
-//         }
-//       } catch (err) {
-//         setError(`Error loading page: ${err}`)
-//       } finally {
-//         setLoading(false)
-//       }
-//     }
+    loadHistory()
+  }, [bookId, currentPage, activeTab])
 
-//     loadCurrentPage()
-//   }, [currentPage, sessionId, bookId, getPageContent, preloadPages])
+  // 🔁 POLLING
+  const pollResponse = async (
+    messageId: number,
+    tab: "summary" | "question" | "highlight"
+  ) => {
+    try {
+      const data = await getChatStatus(messageId)
 
-//   // Navigation handlers
-//   const goToPreviousPage = () => {
-//     if (currentPage > 1) setCurrentPage(currentPage - 1)
-//   }
+      if (data.status === "processing") {
+        setTimeout(() => pollResponse(messageId, tab), 1000)
+        return
+      }
 
-//   const goToNextPage = () => {
-//     if (!bookMeta || currentPage < bookMeta.totalPages) {
-//       setCurrentPage(currentPage + 1)
-//     }
-//   }
+      if (data.status === "done") {
+        const botMsg = { role: "assistant", content: data.answer || "" }
 
-//   const handlePageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-//     const page = parseInt(e.target.value, 10)
-//     if (!isNaN(page) && page >= 1 && (!bookMeta || page <= bookMeta.totalPages)) {
-//       setCurrentPage(page)
-//     }
-//   }
+        setMessages((prev: any) => ({
+          ...prev,
+          [tab]: [...prev[tab], botMsg]
+        }))
+      }
 
-//   // Calculate progress bar widths
-//   const prevPercentage = ((currentPage - 1) / (bookMeta?.totalPages || 180)) * 100
-//   const currPercentage = (currentPage / (bookMeta?.totalPages || 180)) * 100
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading((prev) => ({ ...prev, [tab]: false }))
+    }
+  }
 
-//   // Handle AI summary query
-//   const handleSummarizeQuery = useCallback(async () => {
-//     if (!bookMeta || !sessionId) return
+  // 💬 SEND
+  const handleSend = async () => {
+    if (!input.trim()) return
 
-//     setAiLoading(true)
-//     try {
-//       const response = await summarizePage(bookId, currentPage, sessionId)
-//       setAiResponses(prev => ({
-//         ...prev,
-//         summary: [...prev.summary, response],
-//       }))
-//     } catch (err) {
-//       console.error('Summary query error:', err)
-//     } finally {
-//       setAiLoading(false)
-//     }
-//   }, [bookId, currentPage, sessionId, bookMeta])
+    const userMsg = { role: "user", content: input }
 
-//   // Handle follow-up questions query
-//   const handleFollowUpQuery = useCallback(async () => {
-//     if (!bookMeta || !sessionId) return
+    setMessages((prev: any) => ({
+      ...prev,
+      [activeTab]: [...prev[activeTab], userMsg]
+    }))
 
-//     setAiLoading(true)
-//     try {
-//       const questions = await getFollowUpQuestions(bookId, currentPage, sessionId)
-//       setSuggestedQuestions(questions)
-//     } catch (err) {
-//       console.error('Follow-up questions error:', err)
-//     } finally {
-//       setAiLoading(false)
-//     }
-//   }, [bookId, currentPage, sessionId, bookMeta])
+    setLoading((prev) => ({ ...prev, [activeTab]: true }))
 
-//   // Handle custom question
-//   const handleAskQuestion = useCallback(
-//     async (question: string) => {
-//       if (!bookMeta || !sessionId) return
+    try {
+      const res = await sendChatMessage({
+        document_id: bookId,
+        page: currentPage,
+        message: input,
+        intent: activeTab,
+      })
 
-//       setAiLoading(true)
-//       try {
-//         const response = await askQuestion(bookId, currentPage, question, sessionId)
-//         setAiResponses(prev => ({
-//           ...prev,
-//           ask: [...prev.ask, response],
-//         }))
-//       } catch (err) {
-//         console.error('Ask question error:', err)
-//       } finally {
-//         setAiLoading(false)
-//       }
-//     },
-//     [bookId, currentPage, sessionId, bookMeta]
-//   )
+      pollResponse(res.message_id, activeTab)
 
-//   // Save reading progress
-//   const handleSaveProgress = useCallback(() => {
-//     if (!sessionId) return
-//     saveReadingProgress(bookId, currentPage, sessionId).catch(err => {
-//       console.error('Failed to save progress:', err)
-//     })
-//   }, [bookId, currentPage, sessionId])
+    } catch (err) {
+      console.error(err)
+      setLoading((prev) => ({ ...prev, [activeTab]: false }))
+    } finally {
+      setInput("")
+    }
+  }
 
-//   return (
-//     <div className="bg-background text-on-background overflow-hidden">
-//       {/* Top Navigation Bar */}
-//       <header className="bg-[#FAF9F6] dark:bg-[#1A1A1A] flex justify-between items-center w-full px-16 h-16 fixed top-0 z-50 border-b border-surface-container-low/30">
-//         <div className="flex items-center gap-8">
-//           <span className="text-xl font-semibold tracking-tight text-[#2f3430] dark:text-[#FAF9F6] font-serif">The Living Manuscript</span>
-//           <nav className="hidden md:flex gap-6 items-center">
-//             <a className="text-[#2f3430] dark:text-white font-bold border-b-2 border-[#5f5e5e] pb-1 font-label text-xs uppercase tracking-widest" href="#">Library</a>
-//             <a className="text-[#5f5e5e] dark:text-[#afb3ae] hover:text-[#2f3430] font-label text-xs uppercase tracking-widest transition-colors duration-200" href="#">Annotations</a>
-//             <a className="text-[#5f5e5e] dark:text-[#afb3ae] hover:text-[#2f3430] font-label text-xs uppercase tracking-widest transition-colors duration-200" href="#">Archive</a>
-//           </nav>
-//         </div>
-//         <div className="flex items-center gap-4">
-//           <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full">
-//             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-//             <span className="font-label text-[10px] uppercase tracking-tighter text-on-surface-variant">Session active</span>
-//           </div>
-//           <button className="font-label text-[10px] uppercase tracking-widest text-outline hover:text-error transition-colors">Clear session</button>
-//           <span className="material-symbols-outlined text-[#5f5e5e] cursor-pointer">account_circle</span>
-//         </div>
-//       </header>
+  // 🔥 AUTO SUMMARY
+  const handleTabChange = async (value: string) => {
+    const tab = value as "summary" | "question" | "highlight"
+    setActiveTab(tab)
 
-//       <main className="flex h-screen pt-16">
-//         {/* Sidebar Navigation */}
-//         <aside className="fixed left-0 top-0 h-full flex flex-col py-8 bg-[#f4f4f0] dark:bg-[#121212] w-20 items-center z-40 pt-20">
-//           <div className="flex flex-col gap-8">
-//             <div className="group flex flex-col items-center gap-1 cursor-pointer">
-//               <span className="material-symbols-outlined text-[#2f3430]">menu_book</span>
-//               <span className="font-label text-[8px] uppercase tracking-tighter">Reader</span>
-//             </div>
-//             <div className="group flex flex-col items-center gap-1 cursor-pointer opacity-40 hover:opacity-100 transition-opacity">
-//               <span className="material-symbols-outlined text-[#5f5e5e]">auto_awesome</span>
-//               <span className="font-label text-[8px] uppercase tracking-tighter">Insights</span>
-//             </div>
-//             <div className="group flex flex-col items-center gap-1 cursor-pointer opacity-40 hover:opacity-100 transition-opacity">
-//               <span className="material-symbols-outlined text-[#5f5e5e]">history</span>
-//               <span className="font-label text-[8px] uppercase tracking-tighter">History</span>
-//             </div>
-//             <div className="group flex flex-col items-center gap-1 cursor-pointer opacity-40 hover:opacity-100 transition-opacity">
-//               <span className="material-symbols-outlined text-[#5f5e5e]">settings</span>
-//               <span className="font-label text-[8px] uppercase tracking-tighter">Settings</span>
-//             </div>
-//           </div>
-//         </aside>
+    if (tab === "summary" && messages.summary.length === 0) {
+      setLoading((prev) => ({ ...prev, summary: true }))
 
-//         {/* Left Panel: Book Reader (70%) */}
-//         <section className="ml-20 w-[calc(70%-5rem)] h-full bg-[#FDFBF7] flex flex-col relative">
-//           {/* Reader Header */}
-//           <div className="px-16 py-8 flex justify-between items-baseline border-b border-surface-container-low/30">
-//             <h1 className="font-headline text-3xl font-light italic text-on-surface">{bookMeta?.title || 'Loading...'}</h1>
-//             <span className="font-label text-xs uppercase tracking-[0.2em] text-outline">
-//               Page {currentPage} of {bookMeta?.totalPages || '?'}
-//             </span>
-//           </div>
+      try {
+        const res = await sendChatMessage({
+          document_id: bookId,
+          page: currentPage,
+          intent: "summary"
+        })
 
-//           {/* Manuscript Content */}
-//           <div className="flex-1 overflow-y-auto px-16 py-12 scroll-smooth">
-//             {loading && !displayPage ? (
-//               <div className="flex items-center justify-center h-full">
-//                 <div className="text-center">
-//                   <span className="material-symbols-outlined text-4xl text-primary animate-spin mb-4">hourglass_empty</span>
-//                   <p className="font-label text-on-surface-variant">Loading page {currentPage}...</p>
-//                 </div>
-//               </div>
-//             ) : error ? (
-//               <div className="flex items-center justify-center h-full">
-//                 <div className="text-center">
-//                   <span className="material-symbols-outlined text-4xl text-error mb-4">error</span>
-//                   <p className="font-label text-error">{error}</p>
-//                 </div>
-//               </div>
-//             ) : displayPage ? (
-//               <div className="max-w-2xl mx-auto space-y-8 text-lg leading-relaxed font-serif text-on-surface opacity-90">
-//                 {displayPage.highlight ? (
-//                   <p className="bg-tertiary-container/60 p-6 rounded-sm relative group transition-all duration-300">
-//                     <span className="absolute -left-4 top-0 h-full w-1 bg-tertiary rounded-full opacity-40"></span>
-//                     {displayPage.text}
-//                   </p>
-//                 ) : (
-//                   <p>{displayPage.text}</p>
-//                 )}
-//               </div>
-//             ) : null}
-//           </div>
+        pollResponse(res.message_id, "summary")
 
-//           {/* Reader Footer Controls */}
-//           <div className="px-16 h-24 flex items-center justify-between bg-gradient-to-t from-[#FDFBF7] via-[#FDFBF7] to-transparent border-t border-surface-container-low/30">
-//             <button
-//               onClick={goToPreviousPage}
-//               disabled={currentPage <= 1}
-//               className="flex items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
-//             >
-//               <span className="material-symbols-outlined text-sm group-hover:-translate-x-1 transition-transform">arrow_back_ios</span>
-//               <span className="font-label text-xs uppercase tracking-widest font-semibold">Previous</span>
-//             </button>
+      } catch (err) {
+        console.error(err)
+        setLoading((prev) => ({ ...prev, summary: false }))
+      }
+    }
+  }
 
-//             {/* Progress Bar */}
-//             <div className="flex gap-2 items-center flex-1 mx-8">
-//               <div className="h-1 flex-1 bg-surface-container-highest rounded-full overflow-hidden">
-//                 <div
-//                   className="h-full bg-primary rounded-full transition-all duration-300"
-//                   style={{ width: `${currPercentage}%` }}
-//                 ></div>
-//               </div>
-//               <input
-//                 type="number"
-//                 min="1"
-//                 max={bookMeta?.totalPages || 180}
-//                 value={currentPage}
-//                 onChange={handlePageInputChange}
-//                 className="w-12 h-8 bg-surface-container-lowest border border-outline-variant rounded px-2 font-label text-xs text-center"
-//               />
-//             </div>
+  const goPrev = () => {
+    if (pageData?.has_prev) setCurrentPage(p => p - 1)
+  }
 
-//             <button
-//               onClick={goToNextPage}
-//               disabled={bookMeta ? currentPage >= bookMeta.totalPages : false}
-//               className="flex items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
-//             >
-//               <span className="font-label text-xs uppercase tracking-widest font-semibold">Next</span>
-//               <span className="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward_ios</span>
-//             </button>
-//           </div>
-//         </section>
+  const goNext = () => {
+    if (pageData?.has_next) setCurrentPage(p => p + 1)
+  }
 
-//         {/* Right Panel: AI Chat Panel (30%) */}
-//         <section className="w-[30%] bg-surface-container-low h-full flex flex-col border-l border-surface-container z-10">
-//           {/* AI Header / Context */}
-//           <div className="p-6 space-y-4 border-b border-surface-container">
-//             <div className="flex items-center gap-2 px-3 py-2 bg-tertiary-fixed rounded-lg border border-tertiary-fixed-dim">
-//               <span className="material-symbols-outlined text-tertiary text-sm">auto_awesome</span>
-//               <span className="font-label text-[10px] font-bold uppercase tracking-wider text-on-tertiary-container">
-//                 Context: Page {currentPage}
-//               </span>
-//             </div>
-//           </div>
+  return (
+    <div className="bg-background text-on-background overflow-hidden">
 
-//           {/* Tabs Component */}
-//           <Tabs
-//             value={activeTab}
-//             onValueChange={setActiveTab}
-//             className="w-full h-full flex flex-col bg-surface-container-low"
-//           >
-//             <TabsList className="w-full rounded-none border-b border-surface-container bg-surface-container-low p-0 h-auto">
-//               <TabsTrigger
-//                 value="summary"
-//                 className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent font-label text-[10px] uppercase tracking-widest py-3"
-//               >
-//                 <span className="material-symbols-outlined text-sm mr-1">description</span>
-//                 Summary
-//               </TabsTrigger>
-//               <TabsTrigger
-//                 value="follow-up"
-//                 className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent font-label text-[10px] uppercase tracking-widest py-3"
-//               >
-//                 <span className="material-symbols-outlined text-sm mr-1">quiz</span>
-//                 Follow-up
-//               </TabsTrigger>
-//               <TabsTrigger
-//                 value="ask"
-//                 className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent font-label text-[10px] uppercase tracking-widest py-3"
-//               >
-//                 <span className="material-symbols-outlined text-sm mr-1">help</span>
-//                 Ask
-//               </TabsTrigger>
-//             </TabsList>
+      <header className="bg-[#FAF9F6] flex justify-between items-center w-full px-16 h-16 fixed top-0 z-50">
+        <span className="text-xl font-semibold font-serif">The Living Manuscript</span>
 
-//             {/* Tab: Summary */}
-//             <TabsContent value="summary" className="flex-1 flex flex-col overflow-hidden">
-//               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-//                 <div className="flex flex-col items-start max-w-[90%] space-y-2">
-//                   <div className="p-4 bg-surface-container-lowest rounded-xl rounded-tl-none shadow-sm">
-//                     <p className="font-serif text-base leading-relaxed text-on-surface-variant">
-//                       This passage introduces Nick Carraway's philosophy of non-judgment. He reflects on his father's advice about reserving criticism, establishing the narrator's character as someone who observes rather than judges.
-//                     </p>
-//                   </div>
-//                   <span className="font-label text-[9px] uppercase tracking-widest text-outline ml-1">AI Scholar • Just now</span>
-//                 </div>
+        <span className="text-xs uppercase tracking-widest">
+          Page {currentPage} of {pageData?.total_pages || '?'}
+        </span>
+      </header>
 
-//                 <div className="flex flex-col items-end ml-auto max-w-[90%] space-y-2">
-//                   <div className="p-4 bg-primary text-on-primary rounded-xl rounded-tr-none shadow-sm">
-//                     <p className="font-label text-sm leading-relaxed">
-//                       That's interesting. So Nick is setting himself up as an unreliable observer?
-//                     </p>
-//                   </div>
-//                   <span className="font-label text-[9px] uppercase tracking-widest text-outline mr-1">You • 2 min ago</span>
-//                 </div>
+      <main className="flex h-[calc(100vh-4rem)] mt-16">
 
-//                 <div className="flex flex-col items-start max-w-[90%] space-y-2">
-//                   <div className="p-4 bg-surface-container-lowest rounded-xl rounded-tl-none shadow-sm">
-//                     <p className="font-serif text-base leading-relaxed text-on-surface-variant">
-//                       Exactly! The irony is that by claiming to reserve judgment, he's already judging others. His admission that this "has a limit" foreshadows his inability to maintain objectivity throughout the novel.
-//                     </p>
-//                   </div>
-//                   <span className="font-label text-[9px] uppercase tracking-widest text-outline ml-1">AI Scholar • 1 min ago</span>
-//                 </div>
-//               </div>
+        {/* LEFT PANEL */}
+        <section className="ml-20 w-[70%] bg-[#FDFBF7] flex flex-col">
 
-//               <div className="p-6 bg-surface-container-low border-t border-surface-container">
-//                 <div className="relative flex items-end gap-2 bg-surface-container-lowest p-2 rounded-xl border border-outline-variant/20 focus-within:border-primary/30 transition-all shadow-sm">
-//                   <textarea
-//                     className="flex-1 bg-transparent border-none focus:ring-0 font-label text-sm py-2 px-3 resize-none text-on-surface placeholder:text-outline/50"
-//                     placeholder="Ask about the summary..."
-//                     rows={1}
-//                   ></textarea>
-//                   <button className="bg-primary text-on-primary p-2 rounded-lg flex items-center justify-center hover:bg-on-surface transition-colors">
-//                     <span className="material-symbols-outlined text-lg">send</span>
-//                   </button>
-//                 </div>
-//                 <p className="mt-2 text-center font-label text-[8px] uppercase tracking-[0.2em] text-outline">Summary AI</p>
-//               </div>
-//             </TabsContent>
+          <div className="p-8 border-b text-2xl italic">
+            Document Viewer
+          </div>
 
-//             {/* Tab: Follow-up Questions */}
-//             <TabsContent value="follow-up" className="flex-1 flex flex-col overflow-hidden">
-//               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-//                 <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/30">
-//                   <p className="font-label text-xs font-semibold text-on-surface mb-3">Suggested Questions:</p>
-//                   <div className="space-y-2">
-//                     <button className="w-full text-left p-3 bg-surface-container-lowest rounded-lg hover:bg-primary hover:text-on-primary transition-colors font-label text-[10px] leading-relaxed">
-//                       <span className="material-symbols-outlined text-sm align-middle mr-2">lightbulb</span>
-//                       What does Nick mean by "reserve all judgments"?
-//                     </button>
-//                     <button className="w-full text-left p-3 bg-surface-container-lowest rounded-lg hover:bg-primary hover:text-on-primary transition-colors font-label text-[10px] leading-relaxed">
-//                       <span className="material-symbols-outlined text-sm align-middle mr-2">lightbulb</span>
-//                       How does this philosophy fail him later in the novel?
-//                     </button>
-//                     <button className="w-full text-left p-3 bg-surface-container-lowest rounded-lg hover:bg-primary hover:text-on-primary transition-colors font-label text-[10px] leading-relaxed">
-//                       <span className="material-symbols-outlined text-sm align-middle mr-2">lightbulb</span>
-//                       Why does Nick mention "the secret griefs of wild, unknown men"?
-//                     </button>
-//                     <button className="w-full text-left p-3 bg-surface-container-lowest rounded-lg hover:bg-primary hover:text-on-primary transition-colors font-label text-[10px] leading-relaxed">
-//                       <span className="material-symbols-outlined text-sm align-middle mr-2">lightbulb</span>
-//                       What tone does Fitzgerald use in this opening?
-//                     </button>
-//                   </div>
-//                 </div>
+          <div className="flex-1 overflow-y-auto p-8">
+            {pageData?.status === 'processing' && (
+              <p>Processing page {currentPage}...</p>
+            )}
 
-//                 <div className="p-4 bg-tertiary-container/40 rounded-lg border border-tertiary/20">
-//                   <p className="font-label text-xs uppercase tracking-widest text-on-surface-variant mb-2">💡 Pro Tip:</p>
-//                   <p className="font-label text-[10px] text-on-surface-variant leading-relaxed">
-//                     Click any question above to explore it deeper, or ask your own question in the text field below.
-//                   </p>
-//                 </div>
-//               </div>
+            {pageData?.status === 'done' && pageData.image_url && (
+              <img src={pageData.image_url} className="w-full rounded shadow" />
+            )}
+          </div>
 
-//               <div className="p-6 bg-surface-container-low border-t border-surface-container">
-//                 <div className="relative flex items-end gap-2 bg-surface-container-lowest p-2 rounded-xl border border-outline-variant/20 focus-within:border-primary/30 transition-all shadow-sm">
-//                   <textarea
-//                     className="flex-1 bg-transparent border-none focus:ring-0 font-label text-sm py-2 px-3 resize-none text-on-surface placeholder:text-outline/50"
-//                     placeholder="Or ask your own question..."
-//                     rows={1}
-//                   ></textarea>
-//                   <button className="bg-primary text-on-primary p-2 rounded-lg flex items-center justify-center hover:bg-on-surface transition-colors">
-//                     <span className="material-symbols-outlined text-lg">send</span>
-//                   </button>
-//                 </div>
-//                 <p className="mt-2 text-center font-label text-[8px] uppercase tracking-[0.2em] text-outline">Follow-up Questions AI</p>
-//               </div>
-//             </TabsContent>
+          <div className="p-6 flex justify-between gap-4">
+            <button 
+              onClick={goPrev} 
+              disabled={!pageData?.has_prev}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                !pageData?.has_prev
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : "bg-slate-200 text-slate-700 hover:bg-slate-300 active:scale-95"
+              }`}
+            >
+              ← Previous
+            </button>
+            <button 
+              onClick={goNext} 
+              disabled={!pageData?.has_next}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                !pageData?.has_next
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : "bg-slate-200 text-slate-700 hover:bg-slate-300 active:scale-95"
+              }`}
+            >
+              Next →
+            </button>
+          </div>
+        </section>
 
-//             {/* Tab: Ask Question */}
-//             <TabsContent value="ask" className="flex-1 flex flex-col overflow-hidden">
-//               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-//                 <div className="flex flex-col items-start max-w-[90%] space-y-2">
-//                   <div className="p-4 bg-surface-container-lowest rounded-xl rounded-tl-none shadow-sm">
-//                     <p className="font-serif text-base leading-relaxed text-on-surface-variant">
-//                       I'm ready to help! Ask me anything about this passage, the author, literary techniques, historical context, or how it connects to themes elsewhere in the book. What would you like to explore?
-//                     </p>
-//                   </div>
-//                   <span className="font-label text-[9px] uppercase tracking-widest text-outline ml-1">AI Scholar • Now</span>
-//                 </div>
+        {/* RIGHT PANEL */}
+        <section className="w-[30%] bg-[#f4f4f0] flex flex-col border-l">
 
-//                 <div className="p-4 bg-surface-container-highest rounded-lg border border-outline-variant/30">
-//                   <p className="font-label text-xs font-semibold text-on-surface mb-2">Examples you can ask:</p>
-//                   <ul className="space-y-1 font-label text-[10px] text-on-surface-variant">
-//                     <li>• "Explain the metaphor in this passage"</li>
-//                     <li>• "How does this relate to the American Dream?"</li>
-//                     <li>• "What literary devices are used here?"</li>
-//                     <li>• "Compare this with another character's viewpoint"</li>
-//                   </ul>
-//                 </div>
-//               </div>
+          <div className="p-4 text-xs uppercase">
+            Context: Page {currentPage}
+          </div>
 
-//               <div className="p-6 bg-surface-container-low border-t border-surface-container">
-//                 <div className="relative flex items-end gap-2 bg-surface-container-lowest p-2 rounded-xl border border-outline-variant/20 focus-within:border-primary/30 transition-all shadow-sm">
-//                   <textarea
-//                     className="flex-1 bg-transparent border-none focus:ring-0 font-label text-sm py-2 px-3 resize-none text-on-surface placeholder:text-outline/50"
-//                     placeholder="Ask me anything about this passage..."
-//                     rows={1}
-//                   ></textarea>
-//                   <button className="bg-primary text-on-primary p-2 rounded-lg flex items-center justify-center hover:bg-on-surface transition-colors">
-//                     <span className="material-symbols-outlined text-lg">send</span>
-//                   </button>
-//                 </div>
-//                 <p className="mt-2 text-center font-label text-[8px] uppercase tracking-[0.2em] text-outline">Ask Anything AI</p>
-//               </div>
-//             </TabsContent>
-//           </Tabs>
-//         </section>
-//       </main>
-//     </div>
-//   )
-// }
+          <Tabs defaultValue="summary" onValueChange={handleTabChange} className="flex flex-col h-full">
+
+            <TabsList className="flex gap-2 px-4">
+              <TabsTrigger value="summary">Summary</TabsTrigger>
+              <TabsTrigger value="highlight">Highlight</TabsTrigger>
+              <TabsTrigger value="question">Question</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="summary" className="flex-1 p-4 overflow-y-auto space-y-3">
+              {messages.summary.length === 0 && !loading.summary && (
+                <div className="flex items-center justify-center h-full text-slate-400">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">📖</p>
+                    <p className="text-xs">No summary yet. Click tab to generate.</p>
+                  </div>
+                </div>
+              )}
+              {messages.summary.map((msg: any, i: number) => (
+                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`px-4 py-3 rounded-2xl max-w-xs shadow-md ${
+                    msg.role === "user"
+                      ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-br-none"
+                      : "bg-white text-slate-900 rounded-bl-none border border-slate-200"
+                  }`}>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                      {msg.content}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {loading.summary && (
+                <div className="flex justify-start">
+                  <div className="px-4 py-3 rounded-2xl rounded-bl-none bg-white border border-slate-200">
+                    <div className="flex gap-2 items-center">
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0.1s"}}></div>
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0.2s"}}></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="highlight" className="flex flex-col flex-1">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                {messages.highlight.length === 0 && !loading.highlight && (
+                  <div className="flex items-center justify-center h-full text-slate-400">
+                    <div className="text-center">
+                      <p className="text-lg mb-2">✨</p>
+                      <p className="text-xs">Paste text to highlight key points.</p>
+                    </div>
+                  </div>
+                )}
+                {messages.highlight.map((msg: any, i: number) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`px-4 py-3 rounded-2xl max-w-xs shadow-md ${
+                      msg.role === "user"
+                        ? "bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-br-none"
+                        : "bg-white text-slate-900 rounded-bl-none border border-slate-200"
+                    }`}>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {loading.highlight && (
+                  <div className="flex justify-start">
+                    <div className="px-4 py-3 rounded-2xl rounded-bl-none bg-white border border-slate-200">
+                      <div className="flex gap-2 items-center">
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0.1s"}}></div>
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0.2s"}}></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+                <div className="flex gap-2 items-end">
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Paste text..."
+                    className="flex-1 p-3 pl-4 border border-slate-200 rounded-full text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 bg-white transition-all"
+                  />
+                  <button onClick={handleSend} disabled={loading.highlight} className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    loading.highlight ? "bg-slate-100 text-slate-400" : "bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:shadow-lg active:scale-95"
+                  }`}>
+                    ✨ Explain
+                  </button>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="question" className="flex flex-col flex-1">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                {messages.question.length === 0 && !loading.question && (
+                  <div className="flex items-center justify-center h-full text-slate-400">
+                    <div className="text-center">
+                      <p className="text-lg mb-2">💬</p>
+                      <p className="text-xs">Ask a question to get started.</p>
+                    </div>
+                  </div>
+                )}
+                {messages.question.map((msg: any, i: number) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`px-4 py-3 rounded-2xl max-w-xs shadow-md ${
+                      msg.role === "user"
+                        ? "bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-br-none"
+                        : "bg-white text-slate-900 rounded-bl-none border border-slate-200"
+                    }`}>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {loading.question && (
+                  <div className="flex justify-start">
+                    <div className="px-4 py-3 rounded-2xl rounded-bl-none bg-white border border-slate-200">
+                      <div className="flex gap-2 items-center">
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0.1s"}}></div>
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0.2s"}}></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+                <div className="flex gap-2 items-end">
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask your question..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSend()
+                      }
+                    }}
+                    className="flex-1 p-3 pl-4 border border-slate-200 rounded-full text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white transition-all"
+                  />
+                  <button onClick={handleSend} disabled={loading.question} className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    loading.question ? "bg-slate-100 text-slate-400" : "bg-gradient-to-r from-emerald-600 to-emerald-700 text-white hover:shadow-lg active:scale-95"
+                  }`}>
+                    💬 Send
+                  </button>
+                </div>
+              </div>
+            </TabsContent>
+
+          </Tabs>
+        </section>
+      </main>
+    </div>
+  )
+}

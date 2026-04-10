@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { initSession, uploadBook, processDocument, getSessionDocuments } from "@/services/api";
 import { Upload, BookOpen, Sparkles, Clock, AlertCircle, CheckCircle } from "lucide-react";
+import { useRouter } from "next/dist/client/components/navigation";
 
 export default function Home() {
   const [sessionActive, setSessionActive] = useState(false);
@@ -16,6 +17,8 @@ export default function Home() {
   const [documentId, setDocumentId] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const route = useRouter();
 
   // ✅ INIT SESSION & FETCH DOCUMENTS
   useEffect(() => {
@@ -77,9 +80,7 @@ export default function Home() {
     }
   };
 
-  // =========================
-  // PROCESS
-  // =========================
+
   const handleStartProcessing = async () => {
     if (!documentId) return;
 
@@ -88,9 +89,10 @@ export default function Home() {
 
     try {
       await processDocument(documentId);
-      setUploadSuccess("Processing started 🚀");
+      setUploadSuccess("Processing started");
+      route.push(`/reader/${documentId}`);
     } catch (error) {
-      setUploadError("Processing failed ❌");
+      setUploadError("Processing failed");
     } finally {
       setIsProcessing(false);
     }

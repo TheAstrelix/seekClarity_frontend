@@ -1,6 +1,6 @@
 
 
-import { SessionResponse, UploadResponse, ProcessResponse } from "@/types/type"
+import { SessionResponse, UploadResponse, ProcessResponse, PageResponse, ChatRequest, ChatResponse, ChatStatusResponse } from "@/types/type"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
@@ -63,6 +63,89 @@ export const getSessionDocuments = async () => {
 
   if (!response.ok) {
     throw new Error("Failed to fetch documents")
+  }
+
+  return response.json()
+}
+
+export const fetchPageContent = async (
+  documentId: number,
+  page: number
+): Promise<PageResponse> => {
+  const response = await fetch(
+    `${API_BASE_URL}/api/books/page/?document_id=${documentId}&page=${page}`,
+    {
+      method: "GET",
+      credentials: "include", 
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch page content")
+  }
+
+  return response.json()
+}
+
+export const sendChatMessage = async (
+  payload: ChatRequest
+): Promise<ChatResponse> => {
+
+  const response = await fetch(`${API_BASE_URL}/api/chat/send/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include", // 🔥 required for session cookie
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error("Chat request failed")
+  }
+
+  return response.json()
+}
+
+export const getChatStatus = async (
+  messageId: number
+): Promise<ChatStatusResponse> => {
+  const response = await fetch(
+    `${API_BASE_URL}/api/chat/status/${messageId}/`,
+    {
+      method: "GET",
+      credentials: "include", // 🔥 keep session
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch chat status")
+  }
+
+  return response.json()
+}
+
+export const getChatHistory = async (
+  documentId: number,
+  page?: number,
+  intent?: string
+): Promise<{ messages: any[] }> => {
+  const params = new URLSearchParams({
+    document_id: String(documentId),
+    ...(page && { page: String(page) }),
+    ...(intent && { intent }),
+  })
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/chat/history/?${params.toString()}`,
+    {
+      method: "GET",
+      credentials: "include",
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch chat history")
   }
 
   return response.json()
