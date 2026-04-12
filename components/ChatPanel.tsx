@@ -12,9 +12,14 @@ interface Props {
   intent: "question" | "summary" | "highlight"
 }
 
-// Function to ensure markdown is properly formatted
+// 🔥 Markdown sanitizer (VERY IMPORTANT)
 const ensureMarkdown = (text: string): string => {
-  return text.trim()
+  return text
+    .replace(/\\\*/g, "*")     // fix escaped **
+    .replace(/\\_/g, "_")      // fix escaped _
+    .replace(/\\n/g, "\n")     // fix newlines
+    .replace(/\r/g, "")
+    .trim()
 }
 
 export default function ChatPanel({ documentId, currentPage, intent }: Props) {
@@ -35,6 +40,7 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
     scrollToBottom()
   }, [messages, loading])
 
+  // 🔁 Poll response
   const pollResponse = async (messageId: number) => {
     try {
       const data = await getChatStatus(messageId)
@@ -45,8 +51,10 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
       }
 
       if (data.status === "done") {
-        const content = data.answer || ""
-        console.log("🎯 Assistant response:", content) // DEBUG
+        const content = ensureMarkdown(data.answer || "")
+
+        console.log("🎯 Cleaned response:", content)
+
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content }
@@ -64,6 +72,7 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
     }
   }
 
+  // 📤 Send message
   const handleSend = async () => {
     if (!input.trim()) return
 
@@ -108,18 +117,20 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+
         {messages.length === 0 && (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center text-slate-400">
+          <div className="h-full flex items-center justify-center text-center text-slate-400">
+            <div>
               <div className="text-3xl mb-2">
                 {intent === "question" ? "💭" : 
-                 intent === "summary" ? "📖" : 
-                 "⭐"}
+                 intent === "summary" ? "📖" : "⭐"}
               </div>
               <p className="text-xs">
-                {intent === "question" ? "Ask a question to get started" : 
-                 intent === "summary" ? "Get a summary of this page" : 
-                 "Highlight key points"}
+                {intent === "question"
+                  ? "Ask a question to get started"
+                  : intent === "summary"
+                  ? "Get a summary of this page"
+                  : "Highlight key points"}
               </p>
             </div>
           </div>
@@ -128,56 +139,55 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mb-2`}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {/* USER */}
             {msg.role === "user" ? (
-              <div className="flex items-end gap-2 max-w-xs">
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-700 rounded-3xl blur-md opacity-50 group-hover:opacity-75 transition-opacity"></div>
-                  <div className="relative px-5 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-3xl rounded-tr-sm shadow-lg">
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </p>
-                  </div>
+              // USER
+              <div className="max-w-xs">
+                <div className="px-5 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-3xl rounded-tr-sm shadow-lg text-sm whitespace-pre-wrap">
+                  {msg.content}
                 </div>
               </div>
             ) : (
-              /* ASSISTANT */
-              <div className="flex items-start gap-2 max-w-sm">
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-r from-slate-100 to-slate-50 rounded-3xl blur-md opacity-20"></div>
+              // ASSISTANT
+              <div className="max-w-sm">
+                <div className="px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
+                  
+                  <div className="text-sm leading-relaxed prose prose-sm max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p: (props) => <p className="mb-2" {...props} />,
+                        strong: (props) => <strong className="font-bold text-blue-600" {...props} />,
+                        em: (props) => <em className="italic text-slate-700" {...props} />,
+                        ul: (props) => <ul className="list-disc list-inside mb-2" {...props} />,
+                        ol: (props) => <ol className="list-decimal list-inside mb-2" {...props} />,
+                        li: (props) => <li className="mb-1" {...props} />,
+                        code: ({ children, ...props }: any) => {
+                          const text = String(children)
+                          const isInline = !text.includes("\n")
 
-                  {/* 🔥 UPDATED MARKDOWN RENDER */}
-                  <div className="relative px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
-                    <div className="text-sm leading-relaxed prose prose-sm">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ node, ...props }) => <p className="mb-2" {...props} />,
-                          strong: ({ node, ...props }) => <strong className="font-bold text-blue-600" {...props} />,
-                          em: ({ node, ...props }) => <em className="italic text-slate-700" {...props} />,
-                          ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
-                          ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                          li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                          code: ({ node, ...props }: any) => {
-                            const isInline = !props.children?.[0]?.includes('\n')
-                            return isInline ? (
-                              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-red-600 font-mono text-xs" {...props} />
-                            ) : (
-                              <code className="block bg-slate-900 text-slate-100 p-3 rounded-lg overflow-x-auto font-mono text-xs mb-2" {...props} />
-                            )
-                          },
-                          pre: ({ node, ...props }) => <pre className="mb-2 overflow-x-auto" {...props} />,
-                          blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-slate-300 pl-4 py-2 italic text-slate-600 mb-2" {...props} />,
-                          h1: ({ node, ...props }) => <h1 className="text-lg font-bold mb-2" {...props} />,
-                          h2: ({ node, ...props }) => <h2 className="text-base font-bold mb-2" {...props} />,
-                          h3: ({ node, ...props }) => <h3 className="text-sm font-bold mb-2" {...props} />,
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
+                          return isInline ? (
+                            <code className="bg-slate-100 px-1.5 py-0.5 rounded text-red-600 font-mono text-xs" {...props}>
+                              {text}
+                            </code>
+                          ) : (
+                            <code className="block bg-slate-900 text-slate-100 p-3 rounded-lg overflow-x-auto font-mono text-xs mb-2" {...props}>
+                              {text}
+                            </code>
+                          )
+                        },
+                        pre: (props) => <pre className="mb-2 overflow-x-auto" {...props} />,
+                        blockquote: (props) => (
+                          <blockquote className="border-l-4 border-slate-300 pl-4 py-2 italic text-slate-600 mb-2" {...props} />
+                        ),
+                        h1: (props) => <h1 className="text-lg font-bold mb-2" {...props} />,
+                        h2: (props) => <h2 className="text-base font-bold mb-2" {...props} />,
+                        h3: (props) => <h3 className="text-sm font-bold mb-2" {...props} />,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
                   </div>
 
                 </div>
@@ -188,11 +198,9 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
         {loading && (
           <div className="flex justify-start">
-            <div className="px-4 py-3 rounded-2xl rounded-bl-none bg-slate-100 border border-slate-200">
-              <div className="flex gap-2 items-center">
-                <Loader className="w-4 h-4 text-slate-500 animate-spin" />
-                <span className="text-xs text-slate-500">Thinking...</span>
-              </div>
+            <div className="px-4 py-3 rounded-2xl bg-slate-100 border border-slate-200 flex gap-2 items-center">
+              <Loader className="w-4 h-4 text-slate-500 animate-spin" />
+              <span className="text-xs text-slate-500">Thinking...</span>
             </div>
           </div>
         )}
@@ -200,37 +208,27 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Footer */}
+      {/* Input */}
       <div className="p-4 border-t border-slate-200 bg-white">
-        <div className="flex gap-2 items-end">
-          <div className="flex-1 relative">
-            <input
-              className="w-full p-3 pl-4 pr-4 border border-slate-200 rounded-full text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-slate-50"
-              placeholder={
-                intent === "question" ? "Ask anything..." : 
-                intent === "summary" ? "Ask about the summary..." : 
-                "Ask about highlights..."
+        <div className="flex gap-2">
+          <input
+            className="flex-1 p-3 border border-slate-200 rounded-full text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-slate-50"
+            placeholder="Ask anything..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                handleSend()
               }
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend()
-                }
-              }}
-              disabled={loading}
-            />
-          </div>
+            }}
+            disabled={loading}
+          />
 
           <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className={`p-2.5 rounded-full ${
-              loading || !input.trim()
-                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                : "bg-gradient-to-r from-blue-600 to-blue-700 text-white"
-            }`}
+            className="p-2.5 rounded-full bg-gradient-to-r from-blue-600 to-blue-700 text-white disabled:bg-slate-100 disabled:text-slate-400"
           >
             <Send className="w-5 h-5" />
           </button>
