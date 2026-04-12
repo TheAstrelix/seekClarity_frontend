@@ -13,10 +13,91 @@ interface Props {
   intent: "question" | "summary" | "highlight"
 }
 
-// Function to ensure markdown is properly formatted
+// Function to ensure markdown is properly formatted and convert **text** to markdown
 const ensureMarkdown = (text: string): string => {
-  // Ensure **text** is on separate lines if needed for lists
-  return text.trim()
+  // Replace escaped markdown with actual markdown
+  let cleaned = text.replace(/\\\*\\\*/g, '**')
+  // Ensure ** is properly formatted
+  cleaned = cleaned.replace(/\*{2,}([^\*]+)\*{2,}/g, '**$1**')
+  return cleaned.trim()
+}
+
+// Custom component to render markdown with bold text and structure
+const CustomMarkdownRenderer = ({ content }: { content: string }) => {
+  const lines = content.split('\n')
+  
+  return (
+    <div className="space-y-2">
+      {lines.map((line, idx) => {
+        // Handle bullet points
+        if (line.trim().startsWith('-')) {
+          const bulletContent = line.replace(/^-\s*/, '')
+          return (
+            <div key={idx} className="flex gap-2 ml-2">
+              <span>•</span>
+              <div>
+                {bulletContent.split(/(\*\*[^\*]+\*\*)/g).map((part, pIdx) => {
+                  if (part.startsWith('**') && part.endsWith('**')) {
+                    return (
+                      <strong key={pIdx} className="font-bold text-blue-600">
+                        {part.slice(2, -2)}
+                      </strong>
+                    )
+                  }
+                  return <span key={pIdx}>{part}</span>
+                })}
+              </div>
+            </div>
+          )
+        }
+        
+        // Handle numbered lists
+        if (/^\d+\./.test(line.trim())) {
+          const match = line.match(/^(\d+\.\s+)(.*)/)
+          const numberPart = match?.[1] || ''
+          const listContent = match?.[2] || line
+          
+          return (
+            <div key={idx} className="flex gap-2 ml-2">
+              <span className="min-w-fit">{numberPart}</span>
+              <div>
+                {listContent.split(/(\*\*[^\*]+\*\*)/g).map((part, pIdx) => {
+                  if (part.startsWith('**') && part.endsWith('**')) {
+                    return (
+                      <strong key={pIdx} className="font-bold text-blue-600">
+                        {part.slice(2, -2)}
+                      </strong>
+                    )
+                  }
+                  return <span key={pIdx}>{part}</span>
+                })}
+              </div>
+            </div>
+          )
+        }
+        
+        // Handle regular paragraphs with bold
+        if (line.trim()) {
+          return (
+            <p key={idx} className="mb-1">
+              {line.split(/(\*\*[^\*]+\*\*)/g).map((part, pIdx) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                  return (
+                    <strong key={pIdx} className="font-bold text-blue-600">
+                      {part.slice(2, -2)}
+                    </strong>
+                  )
+                }
+                return <span key={pIdx}>{part}</span>
+              })}
+            </p>
+          )
+        }
+        
+        return null
+      })}
+    </div>
+  )
 }
 
 export default function ChatPanel({ documentId, currentPage, intent }: Props) {
@@ -152,29 +233,8 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
                   {/* 🔥 UPDATED MARKDOWN RENDER */}
                   <div className="relative px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
-                    <div className="text-sm leading-relaxed [&_strong]:font-bold [&_strong]:text-blue-600">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeSanitize]}
-                        components={{
-                          p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                          strong: ({ node, children }) => (
-                            <strong className="font-bold text-blue-600">
-                              {children}
-                            </strong>
-                          ),
-                          em: ({ node, ...props }) => <em className="italic" {...props} />,
-                          ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 ml-2" {...props} />,
-                          ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 ml-2" {...props} />,
-                          li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                          h1: ({ node, ...props }) => <h1 className="text-lg font-bold mb-2" {...props} />,
-                          h2: ({ node, ...props }) => <h2 className="text-base font-bold mb-2" {...props} />,
-                          h3: ({ node, ...props }) => <h3 className="text-sm font-bold mb-1" {...props} />,
-                          hr: () => null,
-                        }}
-                      >
-                        {ensureMarkdown(msg.content)}
-                      </ReactMarkdown>
+                    <div className="text-sm leading-relaxed">
+                      <CustomMarkdownRenderer content={msg.content} />
                     </div>
                   </div>
 
