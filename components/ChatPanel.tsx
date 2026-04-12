@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react"
 import { sendChatMessage, getChatStatus } from "@/services/api"
 import { Send, Loader } from "lucide-react"
 import ReactMarkdown from "react-markdown"
-import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
 interface Props {
@@ -13,91 +12,9 @@ interface Props {
   intent: "question" | "summary" | "highlight"
 }
 
-// Function to ensure markdown is properly formatted and convert **text** to markdown
+// Function to ensure markdown is properly formatted
 const ensureMarkdown = (text: string): string => {
-  // Replace escaped markdown with actual markdown
-  let cleaned = text.replace(/\\\*\\\*/g, '**')
-  // Ensure ** is properly formatted
-  cleaned = cleaned.replace(/\*{2,}([^\*]+)\*{2,}/g, '**$1**')
-  return cleaned.trim()
-}
-
-// Custom component to render markdown with bold text and structure
-const CustomMarkdownRenderer = ({ content }: { content: string }) => {
-  const lines = content.split('\n')
-  
-  return (
-    <div className="space-y-2">
-      {lines.map((line, idx) => {
-        // Handle bullet points
-        if (line.trim().startsWith('-')) {
-          const bulletContent = line.replace(/^-\s*/, '')
-          return (
-            <div key={idx} className="flex gap-2 ml-2">
-              <span>•</span>
-              <div>
-                {bulletContent.split(/(\*\*[^\*]+\*\*)/g).map((part, pIdx) => {
-                  if (part.startsWith('**') && part.endsWith('**')) {
-                    return (
-                      <strong key={pIdx} className="font-bold text-blue-600">
-                        {part.slice(2, -2)}
-                      </strong>
-                    )
-                  }
-                  return <span key={pIdx}>{part}</span>
-                })}
-              </div>
-            </div>
-          )
-        }
-        
-        // Handle numbered lists
-        if (/^\d+\./.test(line.trim())) {
-          const match = line.match(/^(\d+\.\s+)(.*)/)
-          const numberPart = match?.[1] || ''
-          const listContent = match?.[2] || line
-          
-          return (
-            <div key={idx} className="flex gap-2 ml-2">
-              <span className="min-w-fit">{numberPart}</span>
-              <div>
-                {listContent.split(/(\*\*[^\*]+\*\*)/g).map((part, pIdx) => {
-                  if (part.startsWith('**') && part.endsWith('**')) {
-                    return (
-                      <strong key={pIdx} className="font-bold text-blue-600">
-                        {part.slice(2, -2)}
-                      </strong>
-                    )
-                  }
-                  return <span key={pIdx}>{part}</span>
-                })}
-              </div>
-            </div>
-          )
-        }
-        
-        // Handle regular paragraphs with bold
-        if (line.trim()) {
-          return (
-            <p key={idx} className="mb-1">
-              {line.split(/(\*\*[^\*]+\*\*)/g).map((part, pIdx) => {
-                if (part.startsWith('**') && part.endsWith('**')) {
-                  return (
-                    <strong key={pIdx} className="font-bold text-blue-600">
-                      {part.slice(2, -2)}
-                    </strong>
-                  )
-                }
-                return <span key={pIdx}>{part}</span>
-              })}
-            </p>
-          )
-        }
-        
-        return null
-      })}
-    </div>
-  )
+  return text.trim()
 }
 
 export default function ChatPanel({ documentId, currentPage, intent }: Props) {
@@ -233,8 +150,33 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
                   {/* 🔥 UPDATED MARKDOWN RENDER */}
                   <div className="relative px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
-                    <div className="text-sm leading-relaxed">
-                      <CustomMarkdownRenderer content={msg.content} />
+                    <div className="text-sm leading-relaxed prose prose-sm">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ node, ...props }) => <p className="mb-2" {...props} />,
+                          strong: ({ node, ...props }) => <strong className="font-bold text-blue-600" {...props} />,
+                          em: ({ node, ...props }) => <em className="italic text-slate-700" {...props} />,
+                          ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
+                          ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
+                          li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                          code: ({ node, ...props }: any) => {
+                            const isInline = !props.children?.[0]?.includes('\n')
+                            return isInline ? (
+                              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-red-600 font-mono text-xs" {...props} />
+                            ) : (
+                              <code className="block bg-slate-900 text-slate-100 p-3 rounded-lg overflow-x-auto font-mono text-xs mb-2" {...props} />
+                            )
+                          },
+                          pre: ({ node, ...props }) => <pre className="mb-2 overflow-x-auto" {...props} />,
+                          blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-slate-300 pl-4 py-2 italic text-slate-600 mb-2" {...props} />,
+                          h1: ({ node, ...props }) => <h1 className="text-lg font-bold mb-2" {...props} />,
+                          h2: ({ node, ...props }) => <h2 className="text-base font-bold mb-2" {...props} />,
+                          h3: ({ node, ...props }) => <h3 className="text-sm font-bold mb-2" {...props} />,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
                     </div>
                   </div>
 
