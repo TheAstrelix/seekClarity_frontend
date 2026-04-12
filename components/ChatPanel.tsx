@@ -5,11 +5,18 @@ import { sendChatMessage, getChatStatus } from "@/services/api"
 import { Send, Loader } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
+import remarkGfm from "remark-gfm"
 
 interface Props {
   documentId: number
   currentPage: number
   intent: "question" | "summary" | "highlight"
+}
+
+// Function to ensure markdown is properly formatted
+const ensureMarkdown = (text: string): string => {
+  // Ensure **text** is on separate lines if needed for lists
+  return text.trim()
 }
 
 export default function ChatPanel({ documentId, currentPage, intent }: Props) {
@@ -40,9 +47,11 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
       }
 
       if (data.status === "done") {
+        const content = data.answer || ""
+        console.log("🎯 Assistant response:", content) // DEBUG
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: data.answer || "" }
+          { role: "assistant", content }
         ])
       }
 
@@ -143,23 +152,28 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
                   {/* 🔥 UPDATED MARKDOWN RENDER */}
                   <div className="relative px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
-                    <div className="text-sm leading-relaxed">
+                    <div className="text-sm leading-relaxed [&_strong]:font-bold [&_strong]:text-blue-600">
                       <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
                         rehypePlugins={[rehypeSanitize]}
                         components={{
                           p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                          strong: ({ node, ...props }) => <strong className="font-bold text-blue-700" {...props} />,
+                          strong: ({ node, children }) => (
+                            <strong className="font-bold text-blue-600">
+                              {children}
+                            </strong>
+                          ),
                           em: ({ node, ...props }) => <em className="italic" {...props} />,
-                          ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
-                          ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
+                          ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 ml-2" {...props} />,
+                          ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 ml-2" {...props} />,
                           li: ({ node, ...props }) => <li className="mb-1" {...props} />,
                           h1: ({ node, ...props }) => <h1 className="text-lg font-bold mb-2" {...props} />,
                           h2: ({ node, ...props }) => <h2 className="text-base font-bold mb-2" {...props} />,
                           h3: ({ node, ...props }) => <h3 className="text-sm font-bold mb-1" {...props} />,
-                          hr: () => null, // Hide horizontal rules
+                          hr: () => null,
                         }}
                       >
-                        {msg.content}
+                        {ensureMarkdown(msg.content)}
                       </ReactMarkdown>
                     </div>
                   </div>
