@@ -1,41 +1,15 @@
 'use client'
 
-import { useState, useRef, useEffect, ReactNode } from "react"
+import { useState, useRef, useEffect } from "react"
 import { sendChatMessage, getChatStatus } from "@/services/api"
 import { Send, Loader } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import rehypeSanitize from "rehype-sanitize"
 
 interface Props {
   documentId: number
   currentPage: number
   intent: "question" | "summary" | "highlight"
-}
-
-// Simple markdown renderer for bold text, lists, and line breaks
-const renderMarkdown = (text: string): (string | ReactNode)[] => {
-  const tempParts: (string | ReactNode)[] = []
-  let lastIndex = 0
-
-  // Parse bold text (**text**)
-  const boldRegex = /\*\*(.+?)\*\*/g
-  let match
-
-  while ((match = boldRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      tempParts.push(text.slice(lastIndex, match.index))
-    }
-    tempParts.push(
-      <strong key={`bold-${match.index}`} className="font-bold text-slate-900">
-        {match[1]}
-      </strong>
-    )
-    lastIndex = match.index + match[0].length
-  }
-
-  if (lastIndex < text.length) {
-    tempParts.push(text.slice(lastIndex))
-  }
-
-  return tempParts.length > 0 ? tempParts : [text]
 }
 
 export default function ChatPanel({ documentId, currentPage, intent }: Props) {
@@ -83,7 +57,6 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
     }
   }
 
-  // 🔥 SEND
   const handleSend = async () => {
     if (!input.trim()) return
 
@@ -150,11 +123,12 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mb-2`}
           >
+            {/* USER */}
             {msg.role === "user" ? (
               <div className="flex items-end gap-2 max-w-xs">
                 <div className="relative group">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-700 rounded-3xl blur-md opacity-50 group-hover:opacity-75 transition-opacity"></div>
-                  <div className="relative px-5 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-3xl rounded-tr-sm shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105">
+                  <div className="relative px-5 py-3 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-3xl rounded-tr-sm shadow-lg">
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">
                       {msg.content}
                     </p>
@@ -162,18 +136,20 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
                 </div>
               </div>
             ) : (
+              /* ASSISTANT */
               <div className="flex items-start gap-2 max-w-sm">
                 <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-r from-slate-100 to-slate-50 rounded-3xl blur-md opacity-20 group-hover:opacity-30 transition-opacity"></div>
-                  <div className="relative px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md hover:shadow-lg hover:border-slate-300 transition-all duration-200 transform hover:scale-105">
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap space-y-2">
-                      {msg.content.split('\n').map((line, idx) => (
-                        <div key={idx} className="whitespace-normal">
-                          {renderMarkdown(line)}
-                        </div>
-                      ))}
+                  <div className="absolute inset-0 bg-gradient-to-r from-slate-100 to-slate-50 rounded-3xl blur-md opacity-20"></div>
+
+                  {/* 🔥 UPDATED MARKDOWN RENDER */}
+                  <div className="relative px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
+                    <div className="text-sm leading-relaxed prose prose-sm max-w-none">
+                      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+                        {msg.content}
+                      </ReactMarkdown>
                     </div>
                   </div>
+
                 </div>
               </div>
             )}
@@ -199,7 +175,7 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
         <div className="flex gap-2 items-end">
           <div className="flex-1 relative">
             <input
-              className="w-full p-3 pl-4 pr-4 border border-slate-200 rounded-full text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-slate-50 placeholder-slate-400"
+              className="w-full p-3 pl-4 pr-4 border border-slate-200 rounded-full text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-slate-50"
               placeholder={
                 intent === "question" ? "Ask anything..." : 
                 intent === "summary" ? "Ask about the summary..." : 
@@ -220,10 +196,10 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
           <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className={`p-2.5 rounded-full transition-all ${
+            className={`p-2.5 rounded-full ${
               loading || !input.trim()
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                : "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:shadow-lg hover:scale-105 active:scale-95"
+                : "bg-gradient-to-r from-blue-600 to-blue-700 text-white"
             }`}
           >
             <Send className="w-5 h-5" />
