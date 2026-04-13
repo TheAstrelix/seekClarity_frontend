@@ -287,7 +287,7 @@ export default function ReaderPage() {
               )}
             </TabsContent>
 
-            <TabsContent value="highlight" className="flex flex-col flex-1">
+            <TabsContent value="highlight" className="flex flex-col flex-1 h-full">
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
                 {messages.highlight.length === 0 && !loading.highlight && (
                   <div className="flex items-center justify-center h-full text-slate-400">
@@ -340,7 +340,7 @@ export default function ReaderPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="question" className="flex flex-col flex-1">
+            <TabsContent value="question" className="flex flex-col flex-1 h-full">
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
                 {messages.question.length === 0 && !loading.question && (
                   <div className="flex items-center justify-center h-full text-slate-400">

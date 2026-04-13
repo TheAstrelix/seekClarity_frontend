@@ -24,9 +24,7 @@ const ensureMarkdown = (text: string): string => {
 
 export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
-  const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[]
-  >([])
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([])
 
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -153,7 +151,7 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
               <div className="max-w-sm">
                 <div className="px-5 py-3 bg-white border-2 border-slate-200 text-slate-900 rounded-3xl rounded-tl-sm shadow-md">
                   
-                  <div className="text-sm leading-relaxed prose prose-sm max-w-none">
+                  <div className="text-sm leading-relaxed">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
@@ -186,7 +184,7 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
                         h3: (props) => <h3 className="text-sm font-bold mb-2" {...props} />,
                       }}
                     >
-                      {msg.content}
+                      {String(msg.content)}
                     </ReactMarkdown>
                   </div>
 
