@@ -182,7 +182,7 @@ export default function ReaderPage() {
   }
 
   return (
-    <div className="bg-background text-on-background overflow-hidden">
+    <div className="bg-background text-on-background">
 
       <header className="bg-[#FAF9F6] flex justify-between items-center w-full px-16 h-16 fixed top-0 z-50">
         <span className="text-xl font-semibold font-serif">The Living Manuscript</span>
@@ -238,7 +238,7 @@ export default function ReaderPage() {
         </section>
 
         {/* RIGHT PANEL */}
-        <section className="w-[30%] bg-[#f4f4f0] flex flex-col border-l">
+        <section className="w-[30%] bg-[#f4f4f0] flex flex-col border-l min-h-0">
 
           <div className="p-4 text-xs uppercase">
             Context: Page {currentPage}
