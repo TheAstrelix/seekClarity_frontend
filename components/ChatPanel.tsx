@@ -28,15 +28,22 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
 
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  // const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  // const scrollToBottom = () => {
+  //   messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" })
+  // }
 
+  // useEffect(() => {
+  //   scrollToBottom()
+  // }, [messages, loading])
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, loading])
+  if (scrollContainerRef.current) {
+    scrollContainerRef.current.scrollTop =
+      scrollContainerRef.current.scrollHeight
+  }
+}, [messages, loading])
 
   // 🔁 Poll response
   const pollResponse = async (messageId: number) => {
@@ -114,7 +121,8 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      {/* <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4"> */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
 
         {messages.length === 0 && (
           <div className="h-full flex items-center justify-center text-center text-slate-400">
@@ -203,7 +211,7 @@ export default function ChatPanel({ documentId, currentPage, intent }: Props) {
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        {/* <div ref={messagesEndRef} /> */}
       </div>
 
       {/* Input */}
